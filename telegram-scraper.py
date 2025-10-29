@@ -14,6 +14,10 @@ from telethon.errors import FloodWaitError, RPCError
 import aiohttp
 import sys
 from pathlib import Path
+from datetime import datetime
+import subprocess
+from queue import Queue
+import pytz
 
 def display_ascii_art():
     WHITE = "\033[97m"
@@ -223,7 +227,7 @@ class OptimizedTelegramScraper:
                         message_batch.clear()
 
                     if processed_messages % self.state_save_interval == 0:
-                        self.state['channels'][channel] = last_message_id
+                        self.state['channels'][channel]["last_message_id"] = last_message_id
                         self.save_state()
 
                     progress = (processed_messages / total_messages) * 100
@@ -246,7 +250,7 @@ class OptimizedTelegramScraper:
                     except Exception as e:
                         print(f"Error in media download for message {message_id}: {e}")
 
-            self.state['channels'][channel] = last_message_id
+            self.state['channels'][channel]["last_message_id"] = last_message_id
             self.save_state()
             
             print(f"\nCompleted scraping channel {channel}")
@@ -307,28 +311,29 @@ class OptimizedTelegramScraper:
         print(f"\nCompleted media reprocessing for channel {channel}")
 
     async def continuous_scraping(self):
-        self.continuous_scraping_active = True
-        
-        try:
-            while self.continuous_scraping_active:
-                start_time = time.time()
-                
-                for channel in self.state['channels']:
-                    if not self.continuous_scraping_active:
-                        break
-                        
-                    print(f"\nChecking for new messages in channel: {channel}")
-                    await self.scrape_channel(channel, self.state['channels'][channel], search="")
-                
-                elapsed = time.time() - start_time
-                sleep_time = max(0, 60 - elapsed)
-                if sleep_time > 0:
-                    await asyncio.sleep(sleep_time)
-                    
-        except asyncio.CancelledError:
-            print("Continuous scraping stopped.")
-        finally:
-            self.continuous_scraping_active = False
+        pass #TODO:
+        # self.continuous_scraping_active = True
+        # 
+        # try:
+        #     while self.continuous_scraping_active:
+        #         start_time = time.time()
+        #         
+        #         for channel in self.state['channels']:
+        #             if not self.continuous_scraping_active:
+        #                 break
+        #                 
+        #             print(f"\nChecking for new messages in channel: {channel}")
+        #             await self.scrape_channel(channel, self.state['channels'][channel], search="")
+        #         
+        #         elapsed = time.time() - start_time
+        #         sleep_time = max(0, 60 - elapsed)
+        #         if sleep_time > 0:
+        #             await asyncio.sleep(sleep_time)
+        #             
+        # except asyncio.CancelledError:
+        #     print("Continuous scraping stopped.")
+        # finally:
+        #     self.continuous_scraping_active = False
 
     def export_to_csv_optimized(self, channel: str):
         conn = self.get_db_connection(channel)
@@ -349,18 +354,32 @@ class OptimizedTelegramScraper:
                     break
                 writer.writerows(rows)
 
-    def export_to_json_optimized(self, channel: str):
-        conn = self.get_db_connection(channel)
-        json_file = Path(channel) / f'{channel}.json'
+    def export_to_json_optimized(self, channel: Dict[str, Any]):
+        channel_name = channel.get("name")
+        conn = self.get_db_connection(channel_name)
+        json_file = Path(channel_name) / f'{channel_name}.json'
         
         cursor = conn.cursor()
+        total_messages = cursor.execute('SELECT COUNT(*) FROM messages').fetchone()[0]
         cursor.execute('SELECT * FROM messages ORDER BY date')
         columns = [description[0] for description in cursor.description]
         
+        #TODO: just create json and store in file by doing a dumps.
         with open(json_file, 'w', encoding='utf-8') as f:
-            f.write('[\n')
             first_row = True
-            
+
+            #NOTE: Create metadata.
+            ist = pytz.timezone('Asia/Kolkata')
+            current_time = datetime.now(ist)
+            time_string = current_time.isoformat()
+            # Write metadata manually
+            f.write('{\n')
+            f.write(f'  "name": {json.dumps(channel["name"])},\n')
+            f.write(f'  "username": {json.dumps(channel["user_name"])},\n')
+            f.write(f'  "id": {json.dumps(channel["id"])},\n')
+            f.write(f'  "exportedAt": {json.dumps(time_string)},\n')
+            f.write(f'  "totalMessages": {json.dumps(total_messages)},\n')
+            f.write('  "messages": [\n')
             while True:
                 rows = cursor.fetchmany(1000)
                 if not rows:
@@ -373,32 +392,33 @@ class OptimizedTelegramScraper:
                         first_row = False
                     
                     data = dict(zip(columns, row))
-                    json.dump(data, f, ensure_ascii=False, indent=2)
-            
-            f.write('\n]')
+                    json.dump(data, f, ensure_ascii=False, separators=(',', ':'), indent=2)
+
+            f.write('\n  ]\n}')
 
     async def export_data(self):
-        for channel in self.state['channels']:
+        for channel, channel_det in self.state['channels'].items():
             print(f"Exporting data for channel {channel}...")
-            self.export_to_csv_optimized(channel)
-            self.export_to_json_optimized(channel)
+            self.export_to_csv_optimized(channel) #TODO:
+            self.export_to_json_optimized(channel_det)
             print(f"Completed export for channel {channel}")
 
     async def view_channels(self):
-        if not self.state['channels']:
-            print("No channels to view.")
-            return
-        
-        print("\nCurrent channels:")
-        for channel, last_id in self.state['channels'].items():
-            try:
-                conn = self.get_db_connection(channel)
-                cursor = conn.cursor()
-                cursor.execute('SELECT COUNT(*) FROM messages')
-                count = cursor.fetchone()[0]
-                print(f"Channel ID: {channel}, Last Message ID: {last_id}, Messages: {count}")
-            except:
-                print(f"Channel ID: {channel}, Last Message ID: {last_id}")
+        pass #TODO:
+        # if not self.state['channels']:
+        #     print("No channels to view.")
+        #     return
+        # 
+        # print("\nCurrent channels:")
+        # for channel, last_id in self.state['channels'].items():
+        #     try:
+        #         conn = self.get_db_connection(channel)
+        #         cursor = conn.cursor()
+        #         cursor.execute('SELECT COUNT(*) FROM messages')
+        #         count = cursor.fetchone()[0]
+        #         print(f"Channel ID: {channel}, Last Message ID: {last_id}, Messages: {count}")
+        #     except:
+        #         print(f"Channel ID: {channel}, Last Message ID: {last_id}")
 
     async def list_channels(self):
         try:
@@ -438,7 +458,15 @@ class OptimizedTelegramScraper:
             match choice:
                 case 'a':
                     channel = input("Enter channel ID: ")
-                    self.state['channels'][channel] = 0
+                    self.state['channels'][channel] = {}
+                    self.state['channels'][channel]["name"] = channel
+                    self.state['channels'][channel]["last_message_id"] = 0
+                    if channel.startswith('-'):
+                        entity = await self.client.get_entity(PeerChannel(int(channel)))
+                    else:
+                        entity = await self.client.get_entity(channel)
+                    self.state['channels'][channel]["user_name"] = getattr(entity, 'username', None)
+                    self.state['channels'][channel]["id"] = entity.id
                     self.save_state()
                     print(f"Added channel {channel}.")
                     
@@ -454,7 +482,7 @@ class OptimizedTelegramScraper:
                 case 's':
                     search = input("Enter search string: ").lower()
                     for channel in self.state['channels']:
-                        await self.scrape_channel(channel, self.state['channels'][channel], search)
+                        await self.scrape_channel(channel, self.state['channels'][channel].get("last_message_id"), search) #TODO:
                         
                 case 'm':
                     self.state['scrape_media'] = not self.state['scrape_media']
