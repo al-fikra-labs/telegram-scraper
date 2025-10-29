@@ -6,6 +6,7 @@ import asyncio
 import time
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
+from threading import Thread
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 from telethon import TelegramClient
@@ -57,6 +58,10 @@ class OptimizedTelegramScraper:
         self.batch_size = 100
         self.state_save_interval = 50
         self.db_connections = {}
+        self.queue = Queue()
+        self.worker_threads = [Thread(target=self.process_from_shared_queue, daemon=True) for _ in range(5)]
+        for i in self.worker_threads:
+            i.start()
         
     def load_state(self) -> Dict[str, Any]:
         if os.path.exists(self.STATE_FILE):
@@ -145,6 +150,7 @@ class OptimizedTelegramScraper:
             try:
                 downloaded_path = await message.download_media(file=str(media_folder))
                 if downloaded_path:
+                    self.queue.put(downloaded_path)
                     return downloaded_path
                 break
             except FloodWaitError as e:
@@ -170,6 +176,32 @@ class OptimizedTelegramScraper:
         conn.execute('UPDATE messages SET media_path = ? WHERE message_id = ?', 
                     (media_path, message_id))
         conn.commit()
+
+    def ffmpeg_hls(self, media_path: str):
+        """
+        Converts audio files to HLS format using ffmpeg.
+        """
+        hls_folder = media_path. rsplit(".", 1)[0] # remove .fileFormat
+        os.mkdir(hls_folder)
+        hls_path = hls_folder + '/index.m3u8'
+        chunk_size = 20
+        command = f'ffmpeg -i "{media_path}" -codec: copy -start_number 0 -hls_time {chunk_size} -hls_list_size 0 -f hls "{hls_path}"'
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        if result.stderr:
+            print("Command STDERR:\n%s", result.stderr)
+        if result.returncode == 0:
+            return True
+        else:
+            return False
+
+    def process_from_shared_queue(self):
+        while True: # poll infinitely # TODO:
+            print(" waiting for mp")
+            media_path = self.queue.get()
+            print("mp", media_path)
+            self.ffmpeg_hls(media_path)
+            self.queue.task_done()
+
 
     async def scrape_channel(self, channel: str, offset_id: int, search: str):
         try:
@@ -213,7 +245,7 @@ class OptimizedTelegramScraper:
                     
                     message_batch.append(msg_data)
 
-                    if self.state['scrape_media'] and message.media:
+                    if self.state['scrape_media'] and message.media and isinstance(message.media, MessageMediaDocument):
                         task = asyncio.create_task(
                             self.download_media_with_semaphore(download_semaphore, channel, message)
                         )
