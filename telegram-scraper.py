@@ -185,7 +185,7 @@ class OptimizedTelegramScraper:
         os.mkdir(hls_folder)
         hls_path = hls_folder + '/index.m3u8'
         chunk_size = 20
-        command = f'ffmpeg -i "{media_path}" -codec: copy -start_number 0 -hls_time {chunk_size} -hls_list_size 0 -f hls "{hls_path}"'
+        command = f'ffmpeg -i "{media_path}" -map 0:a -codec: copy -start_number 0 -hls_time {chunk_size} -hls_list_size 0 -f hls "{hls_path}"'
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
         if result.stderr:
             print("Command STDERR:\n%s", result.stderr)
@@ -471,6 +471,33 @@ class OptimizedTelegramScraper:
         self.client = TelegramClient('session', self.state['api_id'], self.state['api_hash'])
         await self.client.start()
 
+    async def start(self):
+        start = time.perf_counter()
+
+        channels = ["ഇസ്ലാം -- ചരിത്രത്തിലൂടെ"]
+        for channel in channels:
+            self.state['channels'][channel] = {}                                             
+            self.state['channels'][channel]["name"] = channel                                
+            self.state['channels'][channel]["last_message_id"] = 0                           
+            if channel.startswith('-'):                                                      
+                entity = await self.client.get_entity(PeerChannel(int(channel)))             
+            else:                                                                            
+                entity = await self.client.get_entity(channel)                               
+            self.state['channels'][channel]["user_name"] = getattr(entity, 'username', None) 
+            self.state['channels'][channel]["id"] = entity.id                                
+            self.save_state()                                                                
+            print(f"Added channel {channel}.")                                               
+
+        search = ""
+        for channel in self.state['channels']:
+            await self.scrape_channel(channel, self.state['channels'][channel].get("last_message_id"), search) #TODO:
+
+
+        end = time.perf_counter()
+        elapsed = end - start
+        formatted = time.strftime("%M min %S sec", time.gmtime(elapsed))
+        print(f"Execution time: {formatted}")
+
     async def manage_channels(self):
         while True:
             print("\nMenu:")
@@ -557,7 +584,8 @@ class OptimizedTelegramScraper:
         display_ascii_art()
         await self.initialize_client()
         try:
-            await self.manage_channels()
+            # await self.manage_channels()
+            await self.start()
         finally:
             self.close_db_connections()
             if self.client:
