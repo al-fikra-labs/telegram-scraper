@@ -4,6 +4,7 @@ import json
 import csv
 import asyncio
 import time
+from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
@@ -18,7 +19,10 @@ from pathlib import Path
 from datetime import datetime
 import subprocess
 from queue import Queue
+from decorators import measure_execution_time_async
 import pytz
+
+load_dotenv()
 
 def display_ascii_art():
     WHITE = "\033[97m"
@@ -463,40 +467,35 @@ class OptimizedTelegramScraper:
 
     async def initialize_client(self):
         if not all([self.state['api_id'], self.state['api_hash'], self.state['phone']]):
-            self.state['api_id'] = int(input("Enter your API ID: "))
-            self.state['api_hash'] = input("Enter your API Hash: ")
-            self.state['phone'] = input("Enter your phone number: ")
+            self.state['api_id'] = os.getenv("API_ID", False) or int(input("Enter your API ID: "))
+            self.state['api_hash'] = os.getenv("API_HASH", False) or input("Enter your API Hash: ")
+            self.state['phone'] = os.getenv("PHONE", False) or input("Enter your phone number: ")
             self.save_state()
 
         self.client = TelegramClient('session', self.state['api_id'], self.state['api_hash'])
         await self.client.start()
 
-    async def start(self):
-        start = time.perf_counter()
-
-        channels = ["ഇസ്ലാം -- ചരിത്രത്തിലൂടെ"]
+    @measure_execution_time_async
+    async def auto_start(self):
+        channels = json.loads(os.getenv("CHANNEL_LIST", '{}'))
+        self.state['channels'] = {}
+        # TODO: add env channels to the current state.
         for channel in channels:
-            self.state['channels'][channel] = {}                                             
-            self.state['channels'][channel]["name"] = channel                                
-            self.state['channels'][channel]["last_message_id"] = 0                           
-            if channel.startswith('-'):                                                      
-                entity = await self.client.get_entity(PeerChannel(int(channel)))             
-            else:                                                                            
-                entity = await self.client.get_entity(channel)                               
-            self.state['channels'][channel]["user_name"] = getattr(entity, 'username', None) 
-            self.state['channels'][channel]["id"] = entity.id                                
-            self.save_state()                                                                
-            print(f"Added channel {channel}.")                                               
+            self.state['channels'][channel] = {}
+            self.state['channels'][channel]["name"] = channel
+            self.state['channels'][channel]["last_message_id"] = 0
+            if channel.startswith('-'):             
+                entity = await self.client.get_entity(PeerChannel(int(channel)))
+            else:                              
+                entity = await self.client.get_entity(channel) 
+            self.state['channels'][channel]["user_name"] = getattr(entity, 'username', None)
+            self.state['channels'][channel]["id"] = entity.id
+            self.save_state()
+            print(f"Added channel {channel}.")                               
 
         search = ""
         for channel in self.state['channels']:
             await self.scrape_channel(channel, self.state['channels'][channel].get("last_message_id"), search) #TODO:
-
-
-        end = time.perf_counter()
-        elapsed = end - start
-        formatted = time.strftime("%M min %S sec", time.gmtime(elapsed))
-        print(f"Execution time: {formatted}")
 
     async def manage_channels(self):
         while True:
@@ -585,7 +584,7 @@ class OptimizedTelegramScraper:
         await self.initialize_client()
         try:
             # await self.manage_channels()
-            await self.start()
+            await self.auto_start()
         finally:
             self.close_db_connections()
             if self.client:
