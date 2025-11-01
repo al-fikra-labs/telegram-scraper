@@ -473,7 +473,7 @@ class OptimizedTelegramScraper:
             self.save_state()
 
         self.client = TelegramClient('session', self.state['api_id'], self.state['api_hash'])
-        await self.client.start()
+        await self.client.start(phone=self.state['phone'])
 
     @measure_execution_time_async
     async def auto_start(self):
