@@ -15,6 +15,7 @@ from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument, User, Pee
 from telethon.errors import FloodWaitError, RPCError
 import aiohttp
 import sys
+import shutil
 from pathlib import Path
 from datetime import datetime
 import subprocess
@@ -23,6 +24,7 @@ from decorators import measure_execution_time_async
 import pytz
 
 load_dotenv()
+AZURE_AUTH = os.getenv("AZURE_AUTH")
 
 def display_ascii_art():
     WHITE = "\033[97m"
@@ -185,22 +187,32 @@ class OptimizedTelegramScraper:
         """
         Converts audio files to HLS format using ffmpeg.
         """
-        hls_folder = media_path. rsplit(".", 1)[0] # remove .fileFormat
+        hls_folder = media_path.rsplit(".", 1)[0] # remove .fileFormat
         os.mkdir(hls_folder)
         hls_path = hls_folder + '/index.m3u8'
         chunk_size = 20
         command = f'ffmpeg -i "{media_path}" -map 0:a -codec: copy -start_number 0 -hls_time {chunk_size} -hls_list_size 0 -f hls "{hls_path}"'
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        blob_container_name = "test"
+        blob_transfer_command = [
+            "azcopy", "copy", hls_folder,
+            f"https://salsabeel.blob.core.windows.net/{blob_container_name}?{AZURE_AUTH}",
+            "--recursive"
+        ]
+        transfer_result = subprocess.run(blob_transfer_command, shell=True, capture_output=True, text=True)
         if result.stderr:
             print("Command STDERR:\n%s", result.stderr)
-        if result.returncode == 0:
+        if transfer_result.stderr:
+            print("Command STDERR:\n%s", transfer_result.stderr)
+        if result.returncode == 0 and transfer_result.returncode == 0:
+            os.remove(media_path)
+            shutil.rmtree(hls_folder)
             return True
         else:
             return False
 
     def process_from_shared_queue(self):
         while True: # poll infinitely # TODO:
-            print(" waiting for mp")
             media_path = self.queue.get()
             print("mp", media_path)
             self.ffmpeg_hls(media_path)
