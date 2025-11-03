@@ -509,6 +509,8 @@ class OptimizedTelegramScraper:
         for channel in self.state['channels']:
             await self.scrape_channel(channel, self.state['channels'][channel].get("last_message_id"), search) #TODO:
 
+        await self.export_data()
+
     async def manage_channels(self):
         while True:
             print("\nMenu:")
