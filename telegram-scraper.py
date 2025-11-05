@@ -64,10 +64,10 @@ class OptimizedTelegramScraper:
         self.batch_size = 100
         self.state_save_interval = 50
         self.db_connections = {}
-        self.queue = Queue()
-        self.worker_threads = [Thread(target=self.process_from_shared_queue, daemon=True) for _ in range(5)]
-        for i in self.worker_threads:
-            i.start()
+        # self.queue = Queue()
+        # self.worker_threads = [Thread(target=self.process_from_shared_queue, daemon=True) for _ in range(5)]
+        # for i in self.worker_threads:
+        #     i.start()
         
     def load_state(self) -> Dict[str, Any]:
         if os.path.exists(self.STATE_FILE):
@@ -156,7 +156,7 @@ class OptimizedTelegramScraper:
             try:
                 downloaded_path = await message.download_media(file=str(media_folder))
                 if downloaded_path:
-                    self.queue.put(downloaded_path)
+                    # self.queue.put(downloaded_path)
                     return downloaded_path
                 break
             except FloodWaitError as e:
