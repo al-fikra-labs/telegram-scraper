@@ -132,7 +132,7 @@ class OptimizedTelegramScraper:
         if not message.media or not self.state['scrape_media']:
             return None
 
-        channel_dir = Path(os.getcwd()) / channel
+        channel_dir = Path("/home/node/data/media") / channel
         media_folder = channel_dir / 'media'
         media_folder.mkdir(parents=True, exist_ok=True)  # ensure all parent dirs created
         
@@ -385,7 +385,8 @@ class OptimizedTelegramScraper:
 
     def export_to_csv_optimized(self, channel: str):
         conn = self.get_db_connection(channel)
-        csv_file = Path(channel) / f'{channel}.csv'
+        # csv_file = Path(channel) / f'{channel}.csv'
+        csv_file = "/home/node/data/output.csv"
         
         cursor = conn.cursor()
         cursor.execute('SELECT * FROM messages ORDER BY date')
@@ -405,7 +406,8 @@ class OptimizedTelegramScraper:
     def export_to_json_optimized(self, channel: Dict[str, Any]):
         channel_name = channel.get("name")
         conn = self.get_db_connection(channel_name)
-        json_file = Path(channel_name) / f'{channel_name}.json'
+        # json_file = Path(channel_name) / f'{channel_name}.json'
+        json_file = "/home/node/data/output.json"
         
         cursor = conn.cursor()
         total_messages = cursor.execute('SELECT COUNT(*) FROM messages').fetchone()[0]
@@ -489,7 +491,8 @@ class OptimizedTelegramScraper:
 
     @measure_execution_time_async
     async def auto_start(self):
-        with open("channels.json") as channels_file:
+        file_path = "/home/node/data/channels.json"
+        with open(file_path) as channels_file:
             channels = json.load(channels_file)
         self.state['channels'] = {}
         # TODO: add env channels to the current state.
@@ -511,6 +514,10 @@ class OptimizedTelegramScraper:
             await self.scrape_channel(channel, self.state['channels'][channel].get("last_message_id"), search) #TODO:
 
         await self.export_data()
+        # After scraping is finished.
+        async with aiohttp.ClientSession() as session:
+            async with session.get("http://localhost:5678/webhook-test/telegram-extraction-complete") as response:
+                response.raise_for_status()
 
     async def manage_channels(self):
         while True:
