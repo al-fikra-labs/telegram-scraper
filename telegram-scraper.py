@@ -491,9 +491,12 @@ class OptimizedTelegramScraper:
 
     @measure_execution_time_async
     async def auto_start(self):
+        channels = []
         file_path = "/home/node/data/channels.json"
         with open(file_path) as channels_file:
-            channels = json.load(channels_file)
+            channels_list = json.load(channels_file)
+            for channel in channels_list:
+                channels.append(channel["channel_handle"])
         self.state['channels'] = {}
         # TODO: add env channels to the current state.
         for channel in channels:
